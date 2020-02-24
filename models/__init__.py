@@ -1,2 +1,2 @@
-from prodlda import VAE
-from nvlda import VAE
+from .prodlda import VAE
+from .nvlda import VAE
