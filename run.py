@@ -185,7 +185,7 @@ def main(argv):
     print(network_architecture)
     print(opts)
     vae,emb = train(network_architecture, minibatches,m, training_epochs=e,batch_size=batch_size,learning_rate=learning_rate)
-    print_top_words(emb, zip(*sorted(vocab.items(), key=lambda x: x[1]))[0])
+    print_top_words(emb, list(zip(*sorted(vocab.items(), key=lambda x: x[1])))[0])
     calcPerp(vae)
 
 if __name__ == "__main__":
