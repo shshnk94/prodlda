@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import pickle
 import sys, getopt
 from models import prodlda, nvlda
+from utils import get_topic_coherence, get_topic_diversity
 
 '''-----------Data--------------'''
 def onehot(data, min_length):
@@ -16,6 +17,8 @@ def onehot(data, min_length):
 
 dataset_tr = 'data/20news_clean/train.txt.npy'
 data_tr = np.load(dataset_tr, encoding='latin1')
+dataset_val = 'data/20news_clean/test.txt.npy'
+data_val = np.load(dataset_val, encoding='latin1')
 dataset_te = 'data/20news_clean/test.txt.npy'
 data_te = np.load(dataset_te, encoding='latin1')
 vocab = 'data/20news_clean/vocab.pkl'
@@ -25,19 +28,23 @@ vocab_size=len(vocab)
 #--------------convert to one-hot representation------------------
 print('Converting data to one-hot representation')
 data_tr = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_tr if np.sum(doc)!=0])
+data_val = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_val if np.sum(doc)!=0])
 data_te = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_te if np.sum(doc)!=0])
 
 #--------------print the data dimentions--------------------------
 print('Data Loaded')
 print('Dim Training Data',data_tr.shape)
+print('Dim Validation Data',data_val.shape)
 print('Dim Test Data',data_te.shape)
 '''-----------------------------'''
 
 '''--------------Global Params---------------'''
 n_samples_tr = data_tr.shape[0]
+n_samples_val = data_val.shape[0]
 n_samples_te = data_te.shape[0]
 docs_tr = data_tr
 docs_te = data_te
+docs_val = data_val
 batch_size=200
 learning_rate=0.002
 network_architecture = \
@@ -105,7 +112,8 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
                 print('Encountered NaN, stopping training. Please check the learning_rate settings and the momentum.')
                 # return vae,emb
                 sys.exit()
-
+        
+        evaluate(vae, emb, data_tr, 'val')        
         # Display logs per epoch step
         if epoch % display_step == 0:
             print("Epoch:", '%04d' % (epoch+1),
@@ -113,20 +121,39 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
     return vae,emb
 
 def print_top_words(beta, feature_names, n_top_words=10):
+
     print('---------------Printing the Topics------------------')
     for i in range(len(beta)):
         print(" ".join([feature_names[j]
             for j in beta[i].argsort()[:-n_top_words - 1:-1]]))
     print('---------------End of Topics------------------')
 
-def calcPerp(model):
+def evaluate(model, emb, data, step):
+    
+    coherence = get_topic_coherence(emb, data, vocab)
+    diversity = get_topic_diversity(emb, 25)
+    perplexity = calcPerp(model, step)
+
+    with open('./results/report.csv', 'a') as handle:
+        handle.write(str(perplexity) + ',' + str(coherence) + ',' + str(diversity) + '\n')
+
+    print_top_words(emb, list(zip(*sorted(vocab.items(), key=lambda x: x[1])))[0])
+
+def calcPerp(model, step):
+    
+    docs = docs_val if step == 'val' else docs_te
     cost=[]
-    for doc in docs_te:
+
+    for doc in docs:
         doc = doc.astype('float32')
         n_d = np.sum(doc)
         c=model.test(doc)
         cost.append(c/n_d)
-    print('The approximated perplexity is: ',(np.exp(np.mean(np.array(cost)))))
+
+    perplexity = np.exp(np.mean(np.array(cost)))
+    print('The approximated perplexity is: ', perplexity)
+   
+    return perplexity
 
 def main(argv):
     m = ''
@@ -186,7 +213,7 @@ def main(argv):
     print(opts)
     vae,emb = train(network_architecture, minibatches,m, training_epochs=e,batch_size=batch_size,learning_rate=learning_rate)
     print_top_words(emb, list(zip(*sorted(vocab.items(), key=lambda x: x[1])))[0])
-    calcPerp(vae)
+    evaluate(vae, emb, data_tr, 'test')
 
 if __name__ == "__main__":
    main(sys.argv[1:])
