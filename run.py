@@ -82,6 +82,17 @@ def create_minibatch(data):
         yield data[ixs]
 
 
+def get_summaries(sess):
+
+  weights = tf.trainable_variables()
+  values = sess.run(weights)
+
+  weight_summaries = []
+  for weight, value in zip(weights, values):
+    weight_summaries.append(tf.summary.histogram(weight.name, value))
+
+  return tf.summary.merge(weight_summaries) 
+
 def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
           batch_size=200, training_epochs=100, display_step=5):
     tf.reset_default_graph()
@@ -95,6 +106,10 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
                                      learning_rate=learning_rate,
                                      batch_size=batch_size)
     emb=0
+
+    summaries = get_summaries(vae.sess)
+    writer = tf.summary.FileWriter('./results/logs/', sess.graph)
+
     # Training cycle
     for epoch in range(training_epochs):
         avg_cost = 0.
@@ -113,7 +128,7 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
                 # return vae,emb
                 sys.exit()
         
-        evaluate(vae, emb, data_tr, 'val')        
+        evaluate(vae, emb, data_tr, 'val', summaries, writer)
         # Display logs per epoch step
         if epoch % display_step == 0:
             print("Epoch:", '%04d' % (epoch+1),
@@ -128,11 +143,21 @@ def print_top_words(beta, feature_names, n_top_words=10):
             for j in beta[i].argsort()[:-n_top_words - 1:-1]]))
     print('---------------End of Topics------------------')
 
-def evaluate(model, emb, data, step):
+def evaluate(model, emb, data, step, summaries, writer):
     
     coherence = get_topic_coherence(emb, data, vocab)
     diversity = get_topic_diversity(emb, 25)
     perplexity = calcPerp(model, step)
+    
+    if step == 'val':
+ 
+        weight_summaries = session.run(summaries)
+        writer.add_summary(weight_summaries, epoch)
+
+        saver = tf.train.Saver()
+        save_path = saver.save(session, "./results/model.ckpt")
+        print("Model saved in path: %s" % save_path)
+        print('| Epoch dev: {:d} |'.format(epoch+1)) 
 
     with open('./results/report.csv', 'a') as handle:
         handle.write(str(perplexity) + ',' + str(coherence) + ',' + str(diversity) + '\n')
