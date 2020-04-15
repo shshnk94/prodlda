@@ -11,17 +11,75 @@ import sys, getopt
 from models import prodlda, nvlda
 from utils import get_topic_coherence, get_topic_diversity
 
+m = ''
+f = ''
+s = ''
+t = ''
+b = ''
+r = ''
+e = ''
+
+try:
+    opts, args = getopt.getopt(sys.argv[1:],"hpnm:f:s:t:b:r:e:",["default=","model=","layer1=","layer2=","num_topics=","batch_size=","learning_rate=","training_epochs","data_path=","save_path="])
+except getopt.GetoptError:
+    print('CUDA_VISIBLE_DEVICES=0 python run.py -m <model> -f <#units> -s <#units> -t <#topics> -b <batch_size> -r <learning_rate [0,1] -e <training_epochs>')
+    sys.exit(2)
+for opt, arg in opts:
+    if opt == '-h':
+        print('CUDA_VISIBLE_DEVICES=0 python run.py -m <model> -f <#units> -s <#units> -t <#topics> -b <batch_size> -r <learning_rate [0,1]> -e <training_epochs>')
+        sys.exit()
+    elif opt == '-p':
+        print('Running with the Default settings for prodLDA...')
+        print('CUDA_VISIBLE_DEVICES=0 python run.py -m prodlda -f 100 -s 100 -t 50 -b 200 -r 0.002 -e 100')
+        m='prodlda'
+        f=100
+        s=100
+        t=50
+        b=200
+        r=0.002
+        e=100
+    elif opt == '-n':
+        print('Running with the Default settings for NVLDA...')
+        print('CUDA_VISIBLE_DEVICES=0 python run.py -m nvlda -f 100 -s 100 -t 50 -b 200 -r 0.005 -e 300')
+        m='nvlda'
+        f=100
+        s=100
+        t=50
+        b=200
+        r=0.01
+        e=300
+    elif opt == "-m":
+        m=arg
+    elif opt == "-f":
+        f=int(arg)
+    elif opt == "-s":
+        s=int(arg)
+    elif opt == "-t":
+        t=int(arg)
+    elif opt == "-b":
+        b=int(arg)
+    elif opt == "-r":
+        r=float(arg)
+    elif opt == "-e":
+        e=int(arg)
+    elif opt == "--data_path":
+        data_path = arg
+    elif opt == "--save_path":
+        save_path = arg
+        if not os.path.exists(save_path):
+            os.makedirs(save_path)
+
 '''-----------Data--------------'''
 def onehot(data, min_length):
     return np.bincount(data, minlength=min_length)
 
-dataset_tr = 'data/20news_clean/train.txt.npy'
+dataset_tr = data_path + '/train.txt.npy'
 data_tr = np.load(dataset_tr, encoding='latin1')
-dataset_val = 'data/20news_clean/test.txt.npy'
+dataset_val = data_path + '/test.txt.npy'
 data_val = np.load(dataset_val, encoding='latin1')
-dataset_te = 'data/20news_clean/test.txt.npy'
+dataset_te = data_path + '/test.txt.npy'
 data_te = np.load(dataset_te, encoding='latin1')
-vocab = 'data/20news_clean/vocab.pkl'
+vocab = data_path + '/vocab.pkl'
 vocab = pickle.load(open(vocab,'rb'))
 vocab_size=len(vocab)
 
@@ -30,6 +88,15 @@ print('Converting data to one-hot representation')
 data_tr = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_tr if np.sum(doc)!=0])
 data_val = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_val if np.sum(doc)!=0])
 data_te = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_te if np.sum(doc)!=0])
+
+# sample train, valid, and test
+def sample(x, size):
+    index = np.random.choice(np.arange(x.shape[0]), size=size)
+    return x[index]
+
+data_tr = sample(data_tr, 200)
+data_val = sample(data_val, 50)
+data_te = sample(data_te, 50)
 
 #--------------print the data dimentions--------------------------
 print('Data Loaded')
@@ -108,7 +175,7 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
     emb=0
 
     summaries = get_summaries(vae.sess)
-    writer = tf.summary.FileWriter('./results/logs/', sess.graph)
+    writer = tf.summary.FileWriter(save_path + '/logs/', vae.sess.graph)
 
     # Training cycle
     for epoch in range(training_epochs):
@@ -127,8 +194,8 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
                 print('Encountered NaN, stopping training. Please check the learning_rate settings and the momentum.')
                 # return vae,emb
                 sys.exit()
-        
-        evaluate(vae, emb, data_tr, 'val', summaries, writer)
+
+        evaluate(vae, emb, data_tr, 'val', summaries, writer, vae.sess, epoch)
         # Display logs per epoch step
         if epoch % display_step == 0:
             print("Epoch:", '%04d' % (epoch+1),
@@ -143,8 +210,8 @@ def print_top_words(beta, feature_names, n_top_words=10):
             for j in beta[i].argsort()[:-n_top_words - 1:-1]]))
     print('---------------End of Topics------------------')
 
-def evaluate(model, emb, data, step, summaries, writer):
-    
+def evaluate(model, emb, data, step, summaries=None, writer=None, session=None, epoch=None):
+
     coherence = get_topic_coherence(emb, data, vocab)
     diversity = get_topic_diversity(emb, 25)
     perplexity = calcPerp(model, step)
@@ -155,11 +222,11 @@ def evaluate(model, emb, data, step, summaries, writer):
         writer.add_summary(weight_summaries, epoch)
 
         saver = tf.train.Saver()
-        save_path = saver.save(session, "./results/model.ckpt")
+        saver.save(session, save_path + "/model.ckpt")
         print("Model saved in path: %s" % save_path)
         print('| Epoch dev: {:d} |'.format(epoch+1)) 
 
-    with open('./results/report.csv', 'a') as handle:
+    with open(save_path + '/report.csv', 'a') as handle:
         handle.write(str(perplexity) + ',' + str(coherence) + ',' + str(diversity) + '\n')
 
     print_top_words(emb, list(zip(*sorted(vocab.items(), key=lambda x: x[1])))[0])
@@ -180,57 +247,7 @@ def calcPerp(model, step):
    
     return perplexity
 
-def main(argv):
-    m = ''
-    f = ''
-    s = ''
-    t = ''
-    b = ''
-    r = ''
-    e = ''
-    try:
-      opts, args = getopt.getopt(argv,"hpnm:f:s:t:b:r:,e:",["default=","model=","layer1=","layer2=","num_topics=","batch_size=","learning_rate=","training_epochs"])
-    except getopt.GetoptError:
-        print('CUDA_VISIBLE_DEVICES=0 python run.py -m <model> -f <#units> -s <#units> -t <#topics> -b <batch_size> -r <learning_rate [0,1] -e <training_epochs>')
-        sys.exit(2)
-    for opt, arg in opts:
-        if opt == '-h':
-            print('CUDA_VISIBLE_DEVICES=0 python run.py -m <model> -f <#units> -s <#units> -t <#topics> -b <batch_size> -r <learning_rate [0,1]> -e <training_epochs>')
-            sys.exit()
-        elif opt == '-p':
-            print('Running with the Default settings for prodLDA...')
-            print('CUDA_VISIBLE_DEVICES=0 python run.py -m prodlda -f 100 -s 100 -t 50 -b 200 -r 0.002 -e 100')
-            m='prodlda'
-            f=100
-            s=100
-            t=50
-            b=200
-            r=0.002
-            e=100
-        elif opt == '-n':
-            print('Running with the Default settings for NVLDA...')
-            print('CUDA_VISIBLE_DEVICES=0 python run.py -m nvlda -f 100 -s 100 -t 50 -b 200 -r 0.005 -e 300')
-            m='nvlda'
-            f=100
-            s=100
-            t=50
-            b=200
-            r=0.01
-            e=300
-        elif opt == "-m":
-            m=arg
-        elif opt == "-f":
-            f=int(arg)
-        elif opt == "-s":
-            s=int(arg)
-        elif opt == "-t":
-            t=int(arg)
-        elif opt == "-b":
-            b=int(arg)
-        elif opt == "-r":
-            r=float(arg)
-        elif opt == "-e":
-            e=int(arg)
+def main():
 
     minibatches = create_minibatch(docs_tr.astype('float32'))
     network_architecture,batch_size,learning_rate=make_network(f,s,t,b,r)
@@ -241,4 +258,4 @@ def main(argv):
     evaluate(vae, emb, data_tr, 'test')
 
 if __name__ == "__main__":
-   main(sys.argv[1:])
+   main()
