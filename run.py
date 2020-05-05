@@ -9,7 +9,13 @@ import matplotlib.pyplot as plt
 import pickle
 import sys, getopt
 from models import prodlda, nvlda
-from utils import get_topic_coherence, get_topic_diversity
+
+from os import path
+sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
+from metrics import get_topic_coherence, get_topic_diversity
+
+np.random.seed(0)
+tf.set_random_seed(0)
 
 m = ''
 f = ''
@@ -89,15 +95,6 @@ data_tr = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_tr if n
 data_val = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_val if np.sum(doc)!=0])
 data_te = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_te if np.sum(doc)!=0])
 
-# sample train, valid, and test
-def sample(x, size):
-    index = np.random.choice(np.arange(x.shape[0]), size=size)
-    return x[index]
-
-data_tr = sample(data_tr, 200)
-data_val = sample(data_val, 50)
-data_te = sample(data_te, 50)
-
 #--------------print the data dimentions--------------------------
 print('Data Loaded')
 print('Dim Training Data',data_tr.shape)
@@ -141,7 +138,8 @@ def make_network(layer1=100,layer2=100,num_topics=50,bs=200,eta=0.002):
 
 '''--------------Methods--------------'''
 def create_minibatch(data):
-    rng = np.random.RandomState(10)
+    #rng = np.random.RandomState(10)
+    rng = np.random.RandomState(0)
 
     while True:
         # Return random data samples of a size 'minibatch_size' at each iteration
@@ -162,6 +160,7 @@ def get_summaries(sess):
 
 def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
           batch_size=200, training_epochs=100, display_step=5):
+
     tf.reset_default_graph()
     vae=''
     if type=='prodlda':
@@ -212,8 +211,8 @@ def print_top_words(beta, feature_names, n_top_words=10):
 
 def evaluate(model, emb, data, step, summaries=None, writer=None, session=None, epoch=None):
 
-    coherence = get_topic_coherence(emb, data, vocab)
-    diversity = get_topic_diversity(emb, 25)
+    coherence = get_topic_coherence(emb, data, 'prodlda')
+    diversity = get_topic_diversity(emb, 'prodlda')
     perplexity = calcPerp(model, step)
     
     if step == 'val':

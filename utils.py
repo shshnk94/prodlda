@@ -1,16 +1,12 @@
 import numpy as np
+from scipy.special import softmax
+from sklearn.metrics import pairwise_distances
 
-def get_topic_diversity(beta, topk):
+def get_topic_diversity(beta):
 
-    num_topics = beta.shape[0]
-    list_w = np.zeros((num_topics, topk))
-
-    for k in range(num_topics):
-        idx = beta[k,:].argsort()[-topk:][::-1]
-        list_w[k,:] = idx
-
-    n_unique = len(np.unique(list_w))
-    TD = n_unique / (topk * num_topics)
+    beta = softmax(beta, axis=1)
+    logits = pairwise_distances(beta, metric='cosine')
+    TD = logits[np.triu_indices(logits.shape[0], k = 1)].mean()
     print('Topic diveristy is: {}'.format(TD))
 
     return TD
@@ -42,6 +38,7 @@ def get_document_frequency(data, wi, wj=None):
 
 def get_topic_coherence(beta, data, vocab):
 
+    beta = softmax(beta, axis=1)
     D = len(data) ## number of docs...data is list of documents
     TC = []
     num_topics = len(beta)
@@ -60,11 +57,12 @@ def get_topic_coherence(beta, data, vocab):
 
             while j < len(top_10) and j > i:
                 D_wj, D_wi_wj = get_document_frequency(data, word, top_10[j])
+                f_wi_wj = np.log(D_wi_wj + 1) - np.log(D_wi)
 
-                if D_wi_wj == 0:
-                    f_wi_wj = -1
-                else:
-                    f_wi_wj = -1 + (np.log(D_wi) + np.log(D_wj) - 2.0 * np.log(D)) / (np.log(D_wi_wj) - np.log(D))
+                #if D_wi_wj == 0:
+                #    f_wi_wj = -1
+                #else:
+                #    f_wi_wj = -1 + ((np.log(D_wi_wj) - np.log(D)) - (np.log(D_wi) + np.log(D_wj) - 2.0 * np.log(D))) / (-np.log(D_wi_wj) + np.log(D))
 
                 tmp += f_wi_wj
                 j += 1
