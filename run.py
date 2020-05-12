@@ -9,10 +9,11 @@ import matplotlib.pyplot as plt
 import pickle
 import sys, getopt
 from models import prodlda, nvlda
+from scipy.special import softmax
 
 from os import path
 sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
-from metrics import get_topic_coherence, get_topic_diversity
+from metrics import get_topic_coherence, get_topic_diversity, get_perplexity
 
 np.random.seed(0)
 tf.set_random_seed(0)
@@ -79,12 +80,14 @@ for opt, arg in opts:
 def onehot(data, min_length):
     return np.bincount(data, minlength=min_length)
 
-dataset_tr = data_path + '/train.txt.npy'
-data_tr = np.load(dataset_tr, encoding='latin1')
-dataset_val = data_path + '/test.txt.npy'
-data_val = np.load(dataset_val, encoding='latin1')
-dataset_te = data_path + '/test.txt.npy'
-data_te = np.load(dataset_te, encoding='latin1')
+data_tr = np.load(data_path + '/train.txt.npy', encoding='latin1')
+
+data_val_h1 = np.load(data_path + '/valid_h1.txt.npy', encoding='latin1')
+data_val_h2 = np.load(data_path + '/valid_h2.txt.npy', encoding='latin1')
+
+data_te_h1 = np.load(data_path + '/test_h1.txt.npy', encoding='latin1')
+data_te_h2 = np.load(data_path + '/test_h2.txt.npy', encoding='latin1')
+
 vocab = data_path + '/vocab.pkl'
 vocab = pickle.load(open(vocab,'rb'))
 vocab_size=len(vocab)
@@ -92,32 +95,40 @@ vocab_size=len(vocab)
 #--------------convert to one-hot representation------------------
 print('Converting data to one-hot representation')
 data_tr = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_tr if np.sum(doc)!=0])
-data_val = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_val if np.sum(doc)!=0])
-data_te = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_te if np.sum(doc)!=0])
+data_val_h1 = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_val_h1 if np.sum(doc)!=0])
+data_val_h2 = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_val_h2 if np.sum(doc)!=0])
+data_te_h1 = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_te_h1 if np.sum(doc)!=0])
+data_te_h2 = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_te_h2 if np.sum(doc)!=0])
 
 #--------------print the data dimentions--------------------------
 print('Data Loaded')
 print('Dim Training Data',data_tr.shape)
-print('Dim Validation Data',data_val.shape)
-print('Dim Test Data',data_te.shape)
+print('Dim Validation Data',data_val_h1.shape)
+print('Dim Test Data',data_te_h1.shape)
 '''-----------------------------'''
 
 '''--------------Global Params---------------'''
 n_samples_tr = data_tr.shape[0]
-n_samples_val = data_val.shape[0]
-n_samples_te = data_te.shape[0]
+n_samples_val = data_val_h1.shape[0]
+n_samples_te = data_te_h1.shape[0]
+
 docs_tr = data_tr
-docs_te = data_te
-docs_val = data_val
-batch_size=200
-learning_rate=0.002
+docs_te_h1 = data_te_h1
+docs_te_h2 = data_te_h2
+docs_val_h1 = data_val_h1
+docs_val_h2 = data_val_h2
+
+
+batch_size=int(b)
+learning_rate=float(r)
+"""
 network_architecture = \
     dict(n_hidden_recog_1=100, # 1st layer encoder neurons
          n_hidden_recog_2=100, # 2nd layer encoder neurons
          n_hidden_gener_1=data_tr.shape[1], # 1st layer decoder neurons
          n_input=data_tr.shape[1], # MNIST data input (img shape: 28*28)
          n_z=50)  # dimensionality of latent space
-
+"""
 '''-----------------------------'''
 
 '''--------------Netowrk Architecture and settings---------------'''
@@ -209,11 +220,23 @@ def print_top_words(beta, feature_names, n_top_words=10):
             for j in beta[i].argsort()[:-n_top_words - 1:-1]]))
     print('---------------End of Topics------------------')
 
-def evaluate(model, emb, data, step, summaries=None, writer=None, session=None, epoch=None):
+def evaluate(model, logit_beta, data, step, summaries=None, writer=None, session=None, epoch=None):
 
-    coherence = get_topic_coherence(emb, data, 'prodlda')
-    diversity = get_topic_diversity(emb, 'prodlda')
-    perplexity = calcPerp(model, step)
+    beta = softmax(logit_beta, axis=1)
+ 
+    coherence = get_topic_coherence(beta, data, 'prodlda')
+    diversity = get_topic_diversity(beta, 'prodlda')
+    
+    theta = []
+    docs_h1 = docs_val_h1 if step == 'val' else docs_te_h1
+
+    for base in range(0, docs_h1.shape[0], batch_size):
+        theta.append(softmax(model.topic_prop(docs_h1[base: min(base + batch_size, docs_h1.shape[0])]), axis=1))
+   
+    theta = np.concatenate(theta, axis=0) 
+    docs_h2 = docs_val_h2 if step == 'val' else docs_te_h2
+
+    perplexity = get_perplexity(docs_h1, theta, beta)
     
     if step == 'val':
  
@@ -228,7 +251,7 @@ def evaluate(model, emb, data, step, summaries=None, writer=None, session=None, 
     with open(save_path + '/report.csv', 'a') as handle:
         handle.write(str(perplexity) + ',' + str(coherence) + ',' + str(diversity) + '\n')
 
-    print_top_words(emb, list(zip(*sorted(vocab.items(), key=lambda x: x[1])))[0])
+    print_top_words(logit_beta, list(zip(*sorted(vocab.items(), key=lambda x: x[1])))[0])
 
 def calcPerp(model, step):
     
