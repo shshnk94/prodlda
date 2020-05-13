@@ -236,7 +236,7 @@ def evaluate(model, logit_beta, data, step, summaries=None, writer=None, session
     theta = np.concatenate(theta, axis=0) 
     docs_h2 = docs_val_h2 if step == 'val' else docs_te_h2
 
-    perplexity = get_perplexity(docs_h1, theta, beta)
+    perplexity = get_perplexity(docs_h2, theta, beta)
     
     if step == 'val':
  
@@ -247,11 +247,12 @@ def evaluate(model, logit_beta, data, step, summaries=None, writer=None, session
         saver.save(session, save_path + "/model.ckpt")
         print("Model saved in path: %s" % save_path)
         print('| Epoch dev: {:d} |'.format(epoch+1)) 
+    
+    else:
+        print_top_words(logit_beta, list(zip(*sorted(vocab.items(), key=lambda x: x[1])))[0])
 
     with open(save_path + '/report.csv', 'a') as handle:
         handle.write(str(perplexity) + ',' + str(coherence) + ',' + str(diversity) + '\n')
-
-    print_top_words(logit_beta, list(zip(*sorted(vocab.items(), key=lambda x: x[1])))[0])
 
 def calcPerp(model, step):
     

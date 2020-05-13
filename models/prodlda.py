@@ -56,7 +56,7 @@ class VAE(object):
                                       self.network_weights["biases_recog"])
 
         n_z = self.network_architecture["n_z"]
-        eps = tf.random_normal((self.batch_size, n_z), 0, 1,
+        eps = tf.random_normal(tf.shape(self.z_log_sigma_sq), 0, 1,
                                dtype=tf.float32)
         self.z = tf.add(self.z_mean,
                         tf.multiply(tf.sqrt(tf.exp(self.z_log_sigma_sq)), eps))

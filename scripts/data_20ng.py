@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.datasets import fetch_20newsgroups
 import numpy as np
