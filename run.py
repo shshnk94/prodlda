@@ -215,9 +215,9 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
 def print_top_words(beta, feature_names, n_top_words=10):
 
     print('---------------Printing the Topics------------------')
-    for i in range(len(beta)):
-        print(" ".join([feature_names[j]
-            for j in beta[i].argsort()[:-n_top_words - 1:-1]]))
+    with open(save_path + '/topics' + str(e) + '.txt', 'w') as f:
+        for i in range(len(beta)):
+            print(" ".join([feature_names[j] for j in beta[i].argsort()[:-n_top_words - 1:-1]]))
     print('---------------End of Topics------------------')
 
 def evaluate(model, logit_beta, data, step, summaries=None, writer=None, session=None, epoch=None):
