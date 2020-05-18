@@ -249,7 +249,25 @@ def evaluate(model, logit_beta, data, step, summaries=None, writer=None, session
         print('| Epoch dev: {:d} |'.format(epoch+1)) 
     
     else:
-        print_top_words(logit_beta, list(zip(*sorted(vocab.items(), key=lambda x: x[1])))[0])
+
+        ## get most used topics
+        cnt = 0
+        thetaAvg = np.zeros((1, int(t)))
+        thetaWeightedAvg = np.zeros((1, int(t)))
+
+        for base in range(0, docs_tr.shape[0], batch_size):
+            batch = docs_tr[base: min(base + batch_size, docs_tr.shape[0])]
+            sums = batch.sum(axis=1)
+            cnt += sums.sum(axis=0)
+            theta = softmax(model.topic_prop(batch), axis=1)
+            thetaAvg += theta.sum(axis=0) / docs_tr.shape[0]
+            weighed_theta = (theta.T * sums).T
+            thetaWeightedAvg += weighed_theta.sum(axis=0)
+
+        thetaWeightedAvg = thetaWeightedAvg.squeeze() / cnt
+        print('\nThe 10 most used topics are {}'.format(thetaWeightedAvg.argsort()[::-1][:10]))
+
+        print_top_words(beta, list(zip(*sorted(vocab.items(), key=lambda x: x[1])))[0])
 
     with open(save_path + '/report.csv', 'a') as handle:
         handle.write(str(perplexity) + ',' + str(coherence) + ',' + str(diversity) + '\n')
@@ -277,7 +295,6 @@ def main():
     print(network_architecture)
     print(opts)
     vae,emb = train(network_architecture, minibatches,m, training_epochs=e,batch_size=batch_size,learning_rate=learning_rate)
-    print_top_words(emb, list(zip(*sorted(vocab.items(), key=lambda x: x[1])))[0])
     evaluate(vae, emb, data_tr, 'test')
 
 if __name__ == "__main__":
