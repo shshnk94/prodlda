@@ -252,7 +252,6 @@ def evaluate(model, logit_beta, data, step, summaries=None, writer=None, session
 
         ## get most used topics
         cnt = 0
-        thetaAvg = np.zeros((1, int(t)))
         thetaWeightedAvg = np.zeros((1, int(t)))
 
         for base in range(0, docs_tr.shape[0], batch_size):
@@ -260,7 +259,6 @@ def evaluate(model, logit_beta, data, step, summaries=None, writer=None, session
             sums = batch.sum(axis=1)
             cnt += sums.sum(axis=0)
             theta = softmax(model.topic_prop(batch), axis=1)
-            thetaAvg += theta.sum(axis=0) / docs_tr.shape[0]
             weighed_theta = (theta.T * sums).T
             thetaWeightedAvg += weighed_theta.sum(axis=0)
 
