@@ -18,6 +18,10 @@ from metrics import get_topic_coherence, get_topic_diversity, get_perplexity
 np.random.seed(0)
 tf.set_random_seed(0)
 
+import gc
+import psutil
+process = psutil.Process(os.getpid())
+
 m = ''
 f = ''
 s = ''
@@ -27,7 +31,7 @@ r = ''
 e = ''
 
 try:
-    opts, args = getopt.getopt(sys.argv[1:],"hpnm:f:s:t:b:r:e:",["default=","model=","layer1=","layer2=","num_topics=","batch_size=","learning_rate=","training_epochs","data_path=","save_path="])
+    opts, args = getopt.getopt(sys.argv[1:],"hpnm:f:s:t:b:r:e:",["default=","model=","layer1=","layer2=","num_topics=","batch_size=","learning_rate=","training_epochs","data_path=","save_path=","fold=", "mode=", "load_from="])
 except getopt.GetoptError:
     print('CUDA_VISIBLE_DEVICES=0 python run.py -m <model> -f <#units> -s <#units> -t <#topics> -b <batch_size> -r <learning_rate [0,1] -e <training_epochs>')
     sys.exit(2)
@@ -55,6 +59,8 @@ for opt, arg in opts:
         b=200
         r=0.01
         e=300
+    elif opt == "--mode":
+        mode = arg
     elif opt == "-m":
         m=arg
     elif opt == "-f":
@@ -75,15 +81,28 @@ for opt, arg in opts:
         save_path = arg
         if not os.path.exists(save_path):
             os.makedirs(save_path)
+    elif opt == "--fold":
+        fold = arg
+    elif opt == "--load_from":
+        load_from = arg
+
+if mode == 'test':
+    ckpt = load_from
+else:
+    if fold != '':
+        ckpt = os.path.join(save_path, 'k{}_e{}_lr{}'.format(t, e, r), 'fold{}'.format(fold))
+    else:
+        ckpt = save_path
 
 '''-----------Data--------------'''
 def onehot(data, min_length):
     return np.bincount(data, minlength=min_length)
 
-data_tr = np.load(data_path + '/train.txt.npy', encoding='latin1')
+fold_data_path = os.path.join(data_path, 'fold{}'.format(fold)) if fold != '' else data_path
+data_tr = np.load(fold_data_path + '/train.txt.npy', encoding='latin1')
 
-data_val_h1 = np.load(data_path + '/valid_h1.txt.npy', encoding='latin1')
-data_val_h2 = np.load(data_path + '/valid_h2.txt.npy', encoding='latin1')
+data_val_h1 = np.load(fold_data_path + '/valid_h1.txt.npy', encoding='latin1')
+data_val_h2 = np.load(fold_data_path + '/valid_h2.txt.npy', encoding='latin1')
 
 data_te_h1 = np.load(data_path + '/test_h1.txt.npy', encoding='latin1')
 data_te_h2 = np.load(data_path + '/test_h2.txt.npy', encoding='latin1')
@@ -145,8 +164,6 @@ def make_network(layer1=100,layer2=100,num_topics=50,bs=200,eta=0.002):
     learning_rate=eta
     return network_architecture,batch_size,learning_rate
 
-
-
 '''--------------Methods--------------'''
 def create_minibatch(data):
     #rng = np.random.RandomState(10)
@@ -156,7 +173,6 @@ def create_minibatch(data):
         # Return random data samples of a size 'minibatch_size' at each iteration
         ixs = rng.randint(data.shape[0], size=batch_size)
         yield data[ixs]
-
 
 def get_summaries(sess):
 
@@ -185,17 +201,27 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
     emb=0
 
     summaries = get_summaries(vae.sess)
-    writer = tf.summary.FileWriter(save_path + '/logs/', vae.sess.graph)
+    writer = tf.summary.FileWriter(ckpt + '/logs/', vae.sess.graph)
 
     # Training cycle
+    total_mem = 0
+    mem = process.memory_info().rss / (1024 ** 2)
+
     for epoch in range(training_epochs):
         avg_cost = 0.
-        total_batch = int(n_samples_tr / batch_size)
+        #total_batch = int(n_samples_tr / batch_size)
+        indices = np.random.permutation(docs_tr.shape[0])
+        for base in range(0, docs_tr.shape[0], batch_size):
+            batch_xs = docs_tr[indices[base: min(base + batch_size, docs_tr.shape[0])]]
         # Loop over all batches
-        for i in range(total_batch):
-            batch_xs = next(minibatches)
+        #for i in range(total_batch):
+            #batch_xs = next(minibatches)
             # Fit training using batch data
-            cost,emb = vae.partial_fit(batch_xs)
+            cost = vae.partial_fit(batch_xs)
+            current_mem = process.memory_info().rss / (1024 ** 2)
+            total_mem += (current_mem - mem)
+            print("Memory increase: {}, Cumulative memory: {}, and current {} in MB".format(current_mem - mem, total_mem, current_mem))
+            mem = current_mem
             # Compute average loss
             avg_cost += cost / n_samples_tr * batch_size
 
@@ -204,28 +230,37 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
                 print('Encountered NaN, stopping training. Please check the learning_rate settings and the momentum.')
                 # return vae,emb
                 sys.exit()
-
-        evaluate(vae, emb, data_tr, 'val', summaries, writer, vae.sess, epoch)
+        
+        emb = [v for v in tf.trainable_variables() if v.name == 'beta/kernel:0'][0].eval(vae.sess)
+        evaluate(vae, emb, 'val', summaries, writer, vae.sess, epoch)
         # Display logs per epoch step
         if epoch % display_step == 0:
             print("Epoch:", '%04d' % (epoch+1),
                   "cost=", "{:.9f}".format(avg_cost))
+
+        #current_mem = process.memory_info().rss / (1024 ** 2)
+        #total_mem += (current_mem - mem)
+        #print("Memory increase: {}, Cumulative memory: {}, and current {} in MB".format(current_mem - mem, total_mem, current_mem))
+        #mem = current_mem
+        #gc.collect()
+        
+
     return vae,emb
 
 def print_top_words(beta, feature_names, n_top_words=10):
 
     print('---------------Printing the Topics------------------')
-    with open(save_path + '/topics' + str(e) + '.txt', 'w') as f:
+    with open(ckpt + '/topics.txt', 'w') as f:
         for i in range(len(beta)):
             print(" ".join([feature_names[j] for j in beta[i].argsort()[:-n_top_words - 1:-1]]))
     print('---------------End of Topics------------------')
 
-def evaluate(model, logit_beta, data, step, summaries=None, writer=None, session=None, epoch=None):
+def evaluate(model, beta, step, summaries=None, writer=None, session=None, epoch=None):
 
-    beta = softmax(logit_beta, axis=1)
+    beta = softmax(beta, axis=1)
  
-    coherence = get_topic_coherence(beta, data, 'prodlda')
-    diversity = get_topic_diversity(beta, 'prodlda')
+    coherence = get_topic_coherence(beta, docs_tr, 'prodlda') if step == 'test' else np.nan
+    diversity = get_topic_diversity(beta, 'prodlda') if step == 'test' else np.nan
     
     theta = []
     docs_h1 = docs_val_h1 if step == 'val' else docs_te_h1
@@ -244,7 +279,7 @@ def evaluate(model, logit_beta, data, step, summaries=None, writer=None, session
         writer.add_summary(weight_summaries, epoch)
 
         saver = tf.train.Saver()
-        saver.save(session, save_path + "/model.ckpt")
+        saver.save(session, ckpt + "/model.ckpt")
         print("Model saved in path: %s" % save_path)
         print('| Epoch dev: {:d} |'.format(epoch+1)) 
     
@@ -267,7 +302,7 @@ def evaluate(model, logit_beta, data, step, summaries=None, writer=None, session
 
         print_top_words(beta, list(zip(*sorted(vocab.items(), key=lambda x: x[1])))[0])
 
-    with open(save_path + '/report.csv', 'a') as handle:
+    with open(ckpt + '/' + step + '_scores.csv', 'a') as handle:
         handle.write(str(perplexity) + ',' + str(coherence) + ',' + str(diversity) + '\n')
 
 def calcPerp(model, step):
@@ -288,12 +323,33 @@ def calcPerp(model, step):
 
 def main():
 
-    minibatches = create_minibatch(docs_tr.astype('float32'))
     network_architecture,batch_size,learning_rate=make_network(f,s,t,b,r)
+
     print(network_architecture)
     print(opts)
-    vae,emb = train(network_architecture, minibatches,m, training_epochs=e,batch_size=batch_size,learning_rate=learning_rate)
-    evaluate(vae, emb, data_tr, 'test')
+    
+    if mode == 'train':
+
+        minibatches = create_minibatch(docs_tr.astype('float32'))
+        vae,emb = train(network_architecture, minibatches,m, training_epochs=e,batch_size=batch_size,learning_rate=learning_rate)
+
+    else:
+
+      config = tf.ConfigProto()
+      config.gpu_options.allow_growth=True
+      sess = tf.Session(config=config)
+
+      if m=='prodlda':
+          vae = prodlda.VAE(network_architecture, learning_rate=learning_rate, batch_size=batch_size)
+      else:
+          vae = nvlda.VAE(network_architecture, learning_rate=learning_rate, batch_size=batch_size)
+
+      saver = tf.train.Saver()
+      saver.restore(sess, ckpt + "/model.ckpt")
+      print("Model restored.")
+     
+      emb = sess.run(vae.network_weights['weights_gener']['h2'])
+      evaluate(vae, emb, data_tr, 'test')
 
 if __name__ == "__main__":
    main()
