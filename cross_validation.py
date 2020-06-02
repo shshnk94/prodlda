@@ -27,18 +27,18 @@ def run_script(params, fold):
               ' -f 100' + 
               ' -s 100' +
               ' -t ' + args.topics +
-              ' -b 1000' + 
+              ' -b 4096' + 
               ' -r ' + params['lr'] +
               ' -e ' + params['epochs'] +
               ' --fold ' + str(fold) +
               ' --mode train' +
               ' --data_path ' + args.data_path + 
-              ' --save_path ' + args.save_path)# + ' &')
+              ' --save_path ' + args.save_path + ' &')
 
 #Hyperparameters
 hyperparameters = {'epochs': ['5000'],
-                   'lr': ['5e-4']}#, '5e-3']}
+                   'lr': ['5e-3', '5e-4']}#, '5e-5']}
 
 for params in ParameterGrid(hyperparameters):
-    for fold in range(1): #Hard coded values of fold
+    for fold in range(3): #Hard coded values of fold
         run_script(params, fold)

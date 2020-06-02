@@ -5,7 +5,7 @@ import sys, os
 from collections import OrderedDict
 from copy import deepcopy
 from time import time
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import pickle
 import sys, getopt
 from models import prodlda, nvlda
@@ -177,19 +177,26 @@ def create_minibatch(data):
 def get_summaries(sess):
 
   weights = tf.trainable_variables()
-  values = sess.run(weights)
+  values = [sess.graph.get_tensor_by_name(w.name) for w in weights]
+  #values = weights.eval(sess)
 
   weight_summaries = []
   for weight, value in zip(weights, values):
     weight_summaries.append(tf.summary.histogram(weight.name, value))
 
-  return tf.summary.merge(weight_summaries) 
+  summaries = tf.summary.merge(weight_summaries) 
+  #epoch = tf.placeholder(tf.float32, name="epoch")
+  #writer.add_summary(, epoch)
+
+  return summaries
+ 
 
 def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
           batch_size=200, training_epochs=100, display_step=5):
 
     tf.reset_default_graph()
-    vae=''
+
+    #vae=''
     if type=='prodlda':
         vae = prodlda.VAE(network_architecture,
                                      learning_rate=learning_rate,
@@ -198,10 +205,13 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
         vae = nvlda.VAE(network_architecture,
                                      learning_rate=learning_rate,
                                      batch_size=batch_size)
-    emb=0
+    #emb=0
 
     summaries = get_summaries(vae.sess)
     writer = tf.summary.FileWriter(ckpt + '/logs/', vae.sess.graph)
+    saver = tf.train.Saver()
+
+    vae.sess.graph.finalize()
 
     # Training cycle
     total_mem = 0
@@ -218,10 +228,6 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
             #batch_xs = next(minibatches)
             # Fit training using batch data
             cost = vae.partial_fit(batch_xs)
-            current_mem = process.memory_info().rss / (1024 ** 2)
-            total_mem += (current_mem - mem)
-            print("Memory increase: {}, Cumulative memory: {}, and current {} in MB".format(current_mem - mem, total_mem, current_mem))
-            mem = current_mem
             # Compute average loss
             avg_cost += cost / n_samples_tr * batch_size
 
@@ -232,18 +238,16 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
                 sys.exit()
         
         emb = [v for v in tf.trainable_variables() if v.name == 'beta/kernel:0'][0].eval(vae.sess)
-        evaluate(vae, emb, 'val', summaries, writer, vae.sess, epoch)
+        evaluate(vae, emb, 'val', summaries, writer, saver, vae.sess, epoch)
         # Display logs per epoch step
         if epoch % display_step == 0:
-            print("Epoch:", '%04d' % (epoch+1),
-                  "cost=", "{:.9f}".format(avg_cost))
+            print("Epoch:", '%04d' % (epoch+1), "cost=", "{:.9f}".format(avg_cost))
 
-        #current_mem = process.memory_info().rss / (1024 ** 2)
-        #total_mem += (current_mem - mem)
-        #print("Memory increase: {}, Cumulative memory: {}, and current {} in MB".format(current_mem - mem, total_mem, current_mem))
-        #mem = current_mem
-        #gc.collect()
-        
+        current_mem = process.memory_info().rss / (1024 ** 2)
+        total_mem += (current_mem - mem)
+        print("Memory increase: {}, Cumulative memory: {}, and current {} in MB".format(current_mem - mem, total_mem, current_mem))
+        mem = current_mem
+        gc.collect()
 
     return vae,emb
 
@@ -255,7 +259,7 @@ def print_top_words(beta, feature_names, n_top_words=10):
             print(" ".join([feature_names[j] for j in beta[i].argsort()[:-n_top_words - 1:-1]]))
     print('---------------End of Topics------------------')
 
-def evaluate(model, beta, step, summaries=None, writer=None, session=None, epoch=None):
+def evaluate(model, beta, step, summaries=None, writer=None, saver=None, session=None, epoch=None):
 
     beta = softmax(beta, axis=1)
  
@@ -275,13 +279,12 @@ def evaluate(model, beta, step, summaries=None, writer=None, session=None, epoch
     
     if step == 'val':
  
-        weight_summaries = session.run(summaries)
+        weight_summaries = summaries.eval(session=session)
         writer.add_summary(weight_summaries, epoch)
-
-        saver = tf.train.Saver()
         saver.save(session, ckpt + "/model.ckpt")
+
         print("Model saved in path: %s" % save_path)
-        print('| Epoch dev: {:d} |'.format(epoch+1)) 
+        print('Epoch dev: {:d}'.format(epoch+1)) 
     
     else:
 
