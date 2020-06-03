@@ -10,12 +10,16 @@ parser = argparse.ArgumentParser(description='etm cross validation wrapper')
 parser.add_argument('--dataset', type=str, default='20ng', help='name of corpus')
 parser.add_argument('--topics', type=str, default='50', help='number of topics')
 parser.add_argument('--save_path', type=str, help='save path for every run')
+parser.add_argument('--epochs', type=str, help='number of epochs (custom)')
+parser.add_argument('--lr', type=str, help='learning rate (custom)')
 
 args = parser.parse_args()
 
 #Hyperparameters
-hyperparameters = {'epochs': ['5000'],
-                   'lr': ['5e-5', '5e-4', '5e-3']}
+if args.epochs is None and args.lr is None:
+    hyperparameters = {'epochs': ['5000'], 'lr': ['5e-5', '5e-4', '5e-3']}
+else:
+    hyperparameters = {'epochs': [args.epochs], 'lr': [args.lr]}
 
 for params in ParameterGrid(hyperparameters):
 

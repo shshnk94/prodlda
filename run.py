@@ -29,6 +29,7 @@ t = ''
 b = ''
 r = ''
 e = ''
+fold = ''
 
 try:
     opts, args = getopt.getopt(sys.argv[1:],"hpnm:f:s:t:b:r:e:",["default=","model=","layer1=","layer2=","num_topics=","batch_size=","learning_rate=","training_epochs","data_path=","save_path=","fold=", "mode=", "load_from="])
@@ -81,18 +82,12 @@ for opt, arg in opts:
         save_path = arg
         if not os.path.exists(save_path):
             os.makedirs(save_path)
-    elif opt == "--fold":
-        fold = arg
     elif opt == "--load_from":
         load_from = arg
+    elif opt == "--fold":
+        fold = arg
 
-if mode == 'test':
-    ckpt = load_from
-else:
-    if fold != '':
-        ckpt = os.path.join(save_path, 'k{}_e{}_lr{}'.format(t, e, r), 'fold{}'.format(fold))
-    else:
-        ckpt = save_path
+ckpt = os.path.join(save_path, 'k{}_e{}_lr{}'.format(t, e, r), 'fold{}'.format(fold)) if fold != '' else save_path
 
 '''-----------Data--------------'''
 def onehot(data, min_length):
@@ -338,9 +333,9 @@ def main():
 
     else:
 
-      config = tf.ConfigProto()
-      config.gpu_options.allow_growth=True
-      sess = tf.Session(config=config)
+      #config = tf.ConfigProto()
+      #config.gpu_options.allow_growth=True
+      #sess = tf.Session(config=config)
 
       if m=='prodlda':
           vae = prodlda.VAE(network_architecture, learning_rate=learning_rate, batch_size=batch_size)
@@ -348,11 +343,12 @@ def main():
           vae = nvlda.VAE(network_architecture, learning_rate=learning_rate, batch_size=batch_size)
 
       saver = tf.train.Saver()
-      saver.restore(sess, ckpt + "/model.ckpt")
+      saver.restore(vae.sess, load_from)
       print("Model restored.")
      
-      emb = sess.run(vae.network_weights['weights_gener']['h2'])
-      evaluate(vae, emb, data_tr, 'test')
+      #emb = sess.run(vae.network_weights['weights_gener']['h2'])
+      emb = [v for v in tf.trainable_variables() if v.name == 'beta/kernel:0'][0].eval(vae.sess)
+      evaluate(vae, emb, 'test')
 
 if __name__ == "__main__":
    main()
