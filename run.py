@@ -18,10 +18,6 @@ from metrics import get_topic_coherence, get_topic_diversity, get_perplexity
 np.random.seed(0)
 tf.set_random_seed(0)
 
-import gc
-import psutil
-process = psutil.Process(os.getpid())
-
 m = ''
 f = ''
 s = ''
@@ -80,8 +76,8 @@ for opt, arg in opts:
         data_path = arg
     elif opt == "--save_path":
         save_path = arg
-        if not os.path.exists(save_path):
-            os.makedirs(save_path)
+        #if not os.path.exists(save_path):
+        #    os.makedirs(save_path)
     elif opt == "--load_from":
         load_from = arg
     elif opt == "--fold":
@@ -94,13 +90,15 @@ def onehot(data, min_length):
     return np.bincount(data, minlength=min_length)
 
 fold_data_path = os.path.join(data_path, 'fold{}'.format(fold)) if fold != '' else data_path
-data_tr = np.load(fold_data_path + '/train.txt.npy', encoding='latin1')
+data_tr = np.load(fold_data_path + '/train.txt.npy', encoding='latin1', allow_pickle=True)
 
-data_val_h1 = np.load(fold_data_path + '/valid_h1.txt.npy', encoding='latin1')
-data_val_h2 = np.load(fold_data_path + '/valid_h2.txt.npy', encoding='latin1')
+if mode == 'train':
+    data_val_h1 = np.load(fold_data_path + '/valid_h1.txt.npy', encoding='latin1', allow_pickle=True)
+    data_val_h2 = np.load(fold_data_path + '/valid_h2.txt.npy', encoding='latin1', allow_pickle=True)
 
-data_te_h1 = np.load(data_path + '/test_h1.txt.npy', encoding='latin1')
-data_te_h2 = np.load(data_path + '/test_h2.txt.npy', encoding='latin1')
+#data_te = np.load(data_path + '/test.txt.npy', encoding='latin1', allow_pickle=True)
+data_te_h1 = np.load(data_path + '/test_h1.txt.npy', encoding='latin1', allow_pickle=True)
+data_te_h2 = np.load(data_path + '/test_h2.txt.npy', encoding='latin1', allow_pickle=True)
 
 vocab = data_path + '/vocab.pkl'
 vocab = pickle.load(open(vocab,'rb'))
@@ -109,28 +107,39 @@ vocab_size=len(vocab)
 #--------------convert to one-hot representation------------------
 print('Converting data to one-hot representation')
 data_tr = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_tr if np.sum(doc)!=0])
-data_val_h1 = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_val_h1 if np.sum(doc)!=0])
-data_val_h2 = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_val_h2 if np.sum(doc)!=0])
+
+if mode == 'train':
+    data_val_h1 = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_val_h1 if np.sum(doc)!=0])
+    data_val_h2 = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_val_h2 if np.sum(doc)!=0])
+
+#data_te = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_te_h1 if np.sum(doc)!=0])
 data_te_h1 = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_te_h1 if np.sum(doc)!=0])
 data_te_h2 = np.array([onehot(doc.astype('int'),vocab_size) for doc in data_te_h2 if np.sum(doc)!=0])
 
 #--------------print the data dimentions--------------------------
 print('Data Loaded')
 print('Dim Training Data',data_tr.shape)
-print('Dim Validation Data',data_val_h1.shape)
+if mode == 'train':
+    print('Dim Validation Data',data_val_h1.shape)
 print('Dim Test Data',data_te_h1.shape)
 '''-----------------------------'''
 
 '''--------------Global Params---------------'''
 n_samples_tr = data_tr.shape[0]
-n_samples_val = data_val_h1.shape[0]
+
+if mode == 'train':
+    n_samples_val = data_val_h1.shape[0]
+
 n_samples_te = data_te_h1.shape[0]
 
 docs_tr = data_tr
+#docs_te = data_te
 docs_te_h1 = data_te_h1
 docs_te_h2 = data_te_h2
-docs_val_h1 = data_val_h1
-docs_val_h2 = data_val_h2
+
+if mode == 'train':
+    docs_val_h1 = data_val_h1
+    docs_val_h2 = data_val_h2
 
 
 batch_size=int(b)
@@ -208,10 +217,6 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
 
     vae.sess.graph.finalize()
 
-    # Training cycle
-    total_mem = 0
-    mem = process.memory_info().rss / (1024 ** 2)
-
     for epoch in range(training_epochs):
         avg_cost = 0.
         #total_batch = int(n_samples_tr / batch_size)
@@ -232,17 +237,14 @@ def train(network_architecture, minibatches, type='prodlda',learning_rate=0.001,
                 # return vae,emb
                 sys.exit()
         
+        #parameters = {v.name: v for v in tf.trainable_variables() if v.name == 'beta/kernel:0' or v.name == 'beta/bias:0'}
+        #emb = parameters['beta/kernel:0'].eval(vae.sess) + parameters['beta/bias:0'].eval(vae.sess)
         emb = [v for v in tf.trainable_variables() if v.name == 'beta/kernel:0'][0].eval(vae.sess)
+
         evaluate(vae, emb, 'val', summaries, writer, saver, vae.sess, epoch)
         # Display logs per epoch step
         if epoch % display_step == 0:
             print("Epoch:", '%04d' % (epoch+1), "cost=", "{:.9f}".format(avg_cost))
-
-        current_mem = process.memory_info().rss / (1024 ** 2)
-        total_mem += (current_mem - mem)
-        print("Memory increase: {}, Cumulative memory: {}, and current {} in MB".format(current_mem - mem, total_mem, current_mem))
-        mem = current_mem
-        gc.collect()
 
     return vae,emb
 
@@ -254,12 +256,12 @@ def print_top_words(beta, feature_names, n_top_words=10):
             print(" ".join([feature_names[j] for j in beta[i].argsort()[:-n_top_words - 1:-1]]))
     print('---------------End of Topics------------------')
 
-def evaluate(model, beta, step, summaries=None, writer=None, saver=None, session=None, epoch=None):
-
-    beta = softmax(beta, axis=1)
+def evaluate(model, logit_beta, step, summaries=None, writer=None, saver=None, session=None, epoch=None):
+     
+    beta = softmax(logit_beta, axis=1)
  
     coherence = get_topic_coherence(beta, docs_tr, 'prodlda') if step == 'test' else np.nan
-    diversity = get_topic_diversity(beta, 'prodlda') if step == 'test' else np.nan
+    diversity = get_topic_diversity(logit_beta) if step == 'test' else np.nan
     
     theta = []
     docs_h1 = docs_val_h1 if step == 'val' else docs_te_h1
@@ -282,6 +284,10 @@ def evaluate(model, beta, step, summaries=None, writer=None, saver=None, session
         print('Epoch dev: {:d}'.format(epoch+1)) 
     
     else:
+        
+        #Storing the \beta during inference.
+        with open(os.path.join(ckpt, 'beta.pkl'), 'wb') as f:
+            pickle.dump(logit_beta, f)
 
         ## get most used topics
         cnt = 0
@@ -349,6 +355,7 @@ def main():
       #emb = sess.run(vae.network_weights['weights_gener']['h2'])
       emb = [v for v in tf.trainable_variables() if v.name == 'beta/kernel:0'][0].eval(vae.sess)
       evaluate(vae, emb, 'test')
+      #calcPerp(vae, 'test')
 
 if __name__ == "__main__":
    main()

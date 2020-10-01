@@ -53,7 +53,6 @@ class VAE(object):
         self.z_mean,self.z_log_sigma_sq = self._recognition_network()
 
         n_z = self.network_architecture["n_z"]
-        #eps = tf.random_normal(tf.shape(self.z_log_sigma_sq), 0, 1, dtype=tf.float32)
         self.eps = tf.placeholder("float", [None, n_z])
         self.z = tf.add(self.z_mean, tf.multiply(tf.sqrt(tf.exp(self.z_log_sigma_sq)), self.eps))
         self.sigma = tf.exp(self.z_log_sigma_sq)
@@ -109,8 +108,11 @@ class VAE(object):
     def test(self, X):
         """Test the model and return the lowerbound on the log-likelihood.
         """
-        cost = self.sess.run((self.cost),feed_dict={self.x: np.expand_dims(X, axis=0),self.keep_prob: 1.0})
+        X = np.expand_dims(X, axis=0)
+        eps = np.random.randn(X.shape[0], self.network_architecture["n_z"])
+        cost = self.sess.run((self.cost),feed_dict={self.x: X, self.eps: eps,self.keep_prob: 1.0})
         return cost
+
     def topic_prop(self, X):
         """heta_ is the topic proportion vector. Apply softmax transformation to it before use.
         """
