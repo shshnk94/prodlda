@@ -20,7 +20,7 @@ def log_dir_init(fan_in, fan_out,topics=50):
 
 class VAE(object):
 
-    def __init__(self, network_architecture, transfer_fct=tf.nn.softplus, learning_rate=0.001, batch_size=100):
+    def __init__(self, network_architecture, transfer_fct=tf.nn.softplus, learning_rate=0.001, batch_size=100, keep_prob=0.0):
 
         self.network_architecture = network_architecture
         self.transfer_fct = transfer_fct
@@ -29,7 +29,8 @@ class VAE(object):
 
         # tf Graph input
         self.x = tf.placeholder(tf.float32, [None, network_architecture["n_input"]])
-        self.keep_prob = tf.placeholder(tf.float32)
+        #self.keep_prob = tf.placeholder(tf.float32)
+        self.keep_prob = keep_prob
 
         self.h_dim = network_architecture["n_z"]
         self.a = 1*np.ones((1 , self.h_dim)).astype(np.float32)
@@ -102,7 +103,8 @@ class VAE(object):
     def partial_fit(self, X):
         
         eps = np.random.randn(X.shape[0], self.network_architecture["n_z"])
-        opt, cost = self.sess.run((self.optimizer, self.cost), feed_dict={self.x: X, self.eps: eps, self.keep_prob: .4})
+        #opt, cost = self.sess.run((self.optimizer, self.cost), feed_dict={self.x: X, self.eps: eps, self.keep_prob: .4})
+        opt, cost = self.sess.run((self.optimizer, self.cost), feed_dict={self.x: X, self.eps: eps})
         return cost 
 
     def test(self, X):
@@ -110,12 +112,14 @@ class VAE(object):
         """
         X = np.expand_dims(X, axis=0)
         eps = np.random.randn(X.shape[0], self.network_architecture["n_z"])
-        cost = self.sess.run((self.cost),feed_dict={self.x: X, self.eps: eps,self.keep_prob: 1.0})
+        #cost = self.sess.run((self.cost),feed_dict={self.x: X, self.eps: eps,self.keep_prob: 1.0})
+        cost = self.sess.run((self.cost),feed_dict={self.x: X, self.eps: eps})
         return cost
 
     def topic_prop(self, X):
         """heta_ is the topic proportion vector. Apply softmax transformation to it before use.
         """
         eps = np.random.randn(X.shape[0], self.network_architecture["n_z"])
-        theta_ = self.sess.run((self.z),feed_dict={self.x: X, self.eps: eps, self.keep_prob: 1.0})
+        #theta_ = self.sess.run((self.z),feed_dict={self.x: X, self.eps: eps, self.keep_prob: 1.0})
+        theta_ = self.sess.run((self.z),feed_dict={self.x: X, self.eps: eps})
         return theta_
